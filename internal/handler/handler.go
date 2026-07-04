@@ -19,14 +19,14 @@ import (
 
 // SyncRunner abstracts the synchronous sync operation so it can be
 // replaced in tests without requiring real Tiingo or MotherDuck connections.
-type SyncRunner func(tiingoKey, motherduckURL string, req model.SyncRequest) error
+type SyncRunner func(tiingoKey, databaseURL string, req model.SyncRequest) error
 
 // DefaultSyncRunner is the production implementation that connects to real repositories.
-func DefaultSyncRunner(tiingoKey, motherduckURL string, req model.SyncRequest) error {
+func DefaultSyncRunner(tiingoKey, databaseURL string, req model.SyncRequest) error {
 
 	source := asset.NewTiingoRepository(tiingoKey)
 
-	target, err := asset.NewRepository(repository.MotherDuckRepositoryName, motherduckURL)
+	target, err := asset.NewRepository(repository.MotherDuckRepositoryName, databaseURL)
 	if err != nil {
 		return err
 	}
@@ -150,11 +150,11 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	motherduckURL := os.Getenv("MOTHERDUCK_URL")
-	if motherduckURL == "" {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
 		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
 			Status:    "error",
-			Message:   "MOTHERDUCK_URL not set",
+			Message:   "DATABASE_URL not set",
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		})
 		return
@@ -185,15 +185,19 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		req.Delay = 5
 	}
 
-	go func() {
-		if err := h.syncFunc(tiingoKey, motherduckURL, req); err != nil {
-			slog.Error("Sync failed", "error", err)
-		}
-	}()
+	if err := h.syncFunc(tiingoKey, databaseURL, req); err != nil {
+		slog.Error("Sync failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status:    "error",
+			Message:   "Sync failed: " + err.Error(),
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
 
-	writeJSON(w, http.StatusAccepted, model.SyncResponse{
-		Status:    "accepted",
-		Message:   "Sync started",
+	writeJSON(w, http.StatusOK, model.SyncResponse{
+		Status:    "ok",
+		Message:   "Sync completed",
 		Assets:    req.Assets,
 		Days:      req.Days,
 		Workers:   req.Workers,

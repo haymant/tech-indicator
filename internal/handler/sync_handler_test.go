@@ -33,14 +33,14 @@ func newTestHandler() *Handler {
 func setTestEnv(t *testing.T) {
 	t.Helper()
 	os.Setenv("TIINGO_API_KEY", "test-key-123")
-	os.Setenv("MOTHERDUCK_URL", "md:test-db?motherduck_token=abc")
+	os.Setenv("DATABASE_URL", "postgres://localhost/test")
 	os.Setenv("TECH_INDICATOR_API_KEY", testAPIKey)
 }
 
 // clearTestEnv clears common env vars set by setTestEnv.
 func clearTestEnv() {
 	os.Unsetenv("TIINGO_API_KEY")
-	os.Unsetenv("MOTHERDUCK_URL")
+	os.Unsetenv("DATABASE_URL")
 	os.Unsetenv("TECH_INDICATOR_API_KEY")
 }
 
@@ -57,7 +57,7 @@ func authorizedRequest(t *testing.T, body string) *http.Request {
 	return req
 }
 
-func TestSyncHandler_ValidBody_Returns202(t *testing.T) {
+func TestSyncHandler_ValidBody_Returns200(t *testing.T) {
 	setTestEnv(t)
 	defer clearTestEnv()
 
@@ -70,16 +70,16 @@ func TestSyncHandler_ValidBody_Returns202(t *testing.T) {
 
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Errorf("expected 202, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
 	var resp model.SyncResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Status != "accepted" {
-		t.Errorf("expected status accepted, got %s", resp.Status)
+	if resp.Status != "ok" {
+		t.Errorf("expected status ok, got %s", resp.Status)
 	}
 	if len(resp.Assets) != 2 {
 		t.Errorf("expected 2 assets, got %d", len(resp.Assets))
@@ -92,7 +92,7 @@ func TestSyncHandler_ValidBody_Returns202(t *testing.T) {
 	}
 }
 
-func TestSyncHandler_NoBody_Returns202WithDefaults(t *testing.T) {
+func TestSyncHandler_NoBody_Returns200WithDefaults(t *testing.T) {
 	setTestEnv(t)
 	defer clearTestEnv()
 
@@ -105,8 +105,8 @@ func TestSyncHandler_NoBody_Returns202WithDefaults(t *testing.T) {
 
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Errorf("expected 202, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
 	var resp model.SyncResponse
@@ -168,9 +168,9 @@ func TestSyncHandler_GET_Returns405(t *testing.T) {
 
 func TestSyncHandler_MissingTiingoKey_Returns500(t *testing.T) {
 	os.Unsetenv("TIINGO_API_KEY")
-	os.Setenv("MOTHERDUCK_URL", "md:test-db?motherduck_token=abc")
+	os.Setenv("DATABASE_URL", "postgres://localhost/test")
 	os.Setenv("TECH_INDICATOR_API_KEY", testAPIKey)
-	defer os.Unsetenv("MOTHERDUCK_URL")
+	defer os.Unsetenv("DATABASE_URL")
 	defer os.Unsetenv("TECH_INDICATOR_API_KEY")
 
 	h := newTestHandler()
@@ -196,9 +196,9 @@ func TestSyncHandler_MissingTiingoKey_Returns500(t *testing.T) {
 	}
 }
 
-func TestSyncHandler_MissingMotherDuckURL_Returns500(t *testing.T) {
+func TestSyncHandler_MissingDatabaseURL_Returns500(t *testing.T) {
 	os.Setenv("TIINGO_API_KEY", "test-key-123")
-	os.Unsetenv("MOTHERDUCK_URL")
+	os.Unsetenv("DATABASE_URL")
 	os.Setenv("TECH_INDICATOR_API_KEY", testAPIKey)
 	defer os.Unsetenv("TIINGO_API_KEY")
 	defer os.Unsetenv("TECH_INDICATOR_API_KEY")
@@ -221,12 +221,12 @@ func TestSyncHandler_MissingMotherDuckURL_Returns500(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !strings.Contains(resp.Message, "MOTHERDUCK_URL") {
-		t.Errorf("expected message mentioning MOTHERDUCK_URL, got %s", resp.Message)
+	if !strings.Contains(resp.Message, "DATABASE_URL") {
+		t.Errorf("expected message mentioning DATABASE_URL, got %s", resp.Message)
 	}
 }
 
-func TestSyncHandler_EmptyBody_Returns202(t *testing.T) {
+func TestSyncHandler_EmptyBody_Returns200(t *testing.T) {
 	setTestEnv(t)
 	defer clearTestEnv()
 
@@ -241,8 +241,8 @@ func TestSyncHandler_EmptyBody_Returns202(t *testing.T) {
 
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Errorf("expected 202, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
 	}
 }
 

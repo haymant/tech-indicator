@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestDuckDBDialect_CreateTable(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_CreateTable(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.CreateTable()
 
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS snapshots") {
@@ -18,32 +18,25 @@ func TestDuckDBDialect_CreateTable(t *testing.T) {
 	if !strings.Contains(sql, "date   DATE") {
 		t.Errorf("CreateTable should contain date DATE, got: %s", sql)
 	}
-	if !strings.Contains(sql, "open   DOUBLE") {
-		t.Errorf("CreateTable should contain open DOUBLE, got: %s", sql)
+	if !strings.Contains(sql, "open   DOUBLE PRECISION") {
+		t.Errorf("CreateTable should contain open DOUBLE PRECISION, got: %s", sql)
 	}
-	if !strings.Contains(sql, "high   DOUBLE") {
-		t.Errorf("CreateTable should contain high DOUBLE, got: %s", sql)
+	if !strings.Contains(sql, "high   DOUBLE PRECISION") {
+		t.Errorf("CreateTable should contain high DOUBLE PRECISION, got: %s", sql)
 	}
-	if !strings.Contains(sql, "low    DOUBLE") {
-		t.Errorf("CreateTable should contain low DOUBLE, got: %s", sql)
+	if !strings.Contains(sql, "low    DOUBLE PRECISION") {
+		t.Errorf("CreateTable should contain low DOUBLE PRECISION, got: %s", sql)
 	}
-	if !strings.Contains(sql, "close  DOUBLE") {
-		t.Errorf("CreateTable should contain close DOUBLE, got: %s", sql)
+	if !strings.Contains(sql, "close  DOUBLE PRECISION") {
+		t.Errorf("CreateTable should contain close DOUBLE PRECISION, got: %s", sql)
 	}
-	if !strings.Contains(sql, "volume DOUBLE") {
-		t.Errorf("CreateTable should contain volume DOUBLE, got: %s", sql)
-	}
-
-	if !strings.Contains(sql, "CREATE INDEX IF NOT EXISTS idx_snapshots_name_date") {
-		t.Errorf("CreateTable should contain the index definition, got: %s", sql)
-	}
-	if !strings.Contains(sql, "ON snapshots (name, date)") {
-		t.Errorf("CreateTable index should be on (name, date), got: %s", sql)
+	if !strings.Contains(sql, "volume DOUBLE PRECISION") {
+		t.Errorf("CreateTable should contain volume DOUBLE PRECISION, got: %s", sql)
 	}
 }
 
-func TestDuckDBDialect_DropTable(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_DropTable(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.DropTable()
 
 	if sql != "DROP TABLE IF EXISTS snapshots" {
@@ -51,8 +44,8 @@ func TestDuckDBDialect_DropTable(t *testing.T) {
 	}
 }
 
-func TestDuckDBDialect_Assets(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_Assets(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.Assets()
 
 	if sql != "SELECT DISTINCT name FROM snapshots ORDER BY name" {
@@ -60,8 +53,8 @@ func TestDuckDBDialect_Assets(t *testing.T) {
 	}
 }
 
-func TestDuckDBDialect_GetSince(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_GetSince(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.GetSince()
 
 	if !strings.Contains(sql, "SELECT") {
@@ -84,8 +77,8 @@ func TestDuckDBDialect_GetSince(t *testing.T) {
 	}
 }
 
-func TestDuckDBDialect_LastDate(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_LastDate(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.LastDate()
 
 	if sql != "SELECT MAX(date) FROM snapshots WHERE name = $1" {
@@ -93,8 +86,20 @@ func TestDuckDBDialect_LastDate(t *testing.T) {
 	}
 }
 
-func TestDuckDBDialect_Append(t *testing.T) {
-	d := NewDuckDBDialect()
+func TestPostgresDialect_CreateIndex(t *testing.T) {
+	d := NewPostgresDialect()
+	sql := d.CreateIndex()
+
+	if !strings.Contains(sql, "CREATE INDEX IF NOT EXISTS idx_snapshots_name_date") {
+		t.Errorf("CreateIndex should contain the index definition, got: %s", sql)
+	}
+	if !strings.Contains(sql, "ON snapshots (name, date)") {
+		t.Errorf("CreateIndex should be on (name, date), got: %s", sql)
+	}
+}
+
+func TestPostgresDialect_Append(t *testing.T) {
+	d := NewPostgresDialect()
 	sql := d.Append()
 
 	if !strings.Contains(sql, "INSERT INTO snapshots") {

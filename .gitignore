@@ -19,7 +19,6 @@ go.work.sum
 vendor/
 
 # Build output
-api
 main
 test-server
 
@@ -40,3 +39,6 @@ Thumbs.db
 
 # Vercel
 .vercel
+indicator/
+server
+indicator/
