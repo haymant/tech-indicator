@@ -64,6 +64,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/data", h.handleGetData)
 	mux.HandleFunc("/api/items/", h.handleGetItem)
 	mux.HandleFunc("/api/sync", h.handleSync)
+	mux.HandleFunc("/api/indicators", h.handleListIndicators)
+	mux.HandleFunc("/api/indicators/calculate", h.handleCalculateIndicators)
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
