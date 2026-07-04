@@ -188,6 +188,11 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 		req.Delay = 5
 	}
 
+	// Normalize asset names to uppercase for consistency.
+	for i, a := range req.Assets {
+		req.Assets[i] = strings.ToUpper(a)
+	}
+
 	if err := h.syncFunc(tiingoKey, databaseURL, req); err != nil {
 		slog.Error("Sync failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{

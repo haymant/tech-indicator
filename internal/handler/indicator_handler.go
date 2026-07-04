@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"vercel-go-starter/internal/engine"
@@ -135,6 +136,11 @@ func (h *Handler) handleCalculateIndicators(w http.ResponseWriter, r *http.Reque
 			Status: "error", Message: "Database setup failed", Timestamp: now(),
 		})
 		return
+	}
+
+	// Normalize asset names to uppercase for consistency.
+	for i, a := range req.Assets {
+		req.Assets[i] = strings.ToUpper(a)
 	}
 
 	// Determine assets.
@@ -278,6 +284,10 @@ func (h *Handler) handleGetIndicatorValues(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	symbols := splitComma(symbolsParam)
+	// Normalize to uppercase for consistency.
+	for i, s := range symbols {
+		symbols[i] = strings.ToUpper(s)
+	}
 
 	var indicatorsFilter []string
 	if indParam := q.Get("indicators"); indParam != "" {
@@ -292,13 +302,13 @@ func (h *Handler) handleGetIndicatorValues(w http.ResponseWriter, r *http.Reques
 	args := []any{}
 	argIdx := 1
 
-	// Symbols IN clause
-	query += ` name IN (`
+	// Symbols IN clause (case-insensitive).
+	query += ` LOWER(name) IN (`
 	for i, s := range symbols {
 		if i > 0 {
 			query += ","
 		}
-		query += "$" + itoa(argIdx)
+		query += "LOWER($" + itoa(argIdx) + ")"
 		args = append(args, s)
 		argIdx++
 	}

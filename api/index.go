@@ -5,6 +5,7 @@ import (
 
 	starter "vercel-go-starter"
 	apphandler "vercel-go-starter/internal/handler"
+	"vercel-go-starter/internal/mcp"
 )
 
 var (
@@ -14,6 +15,7 @@ var (
 
 func init() {
 	h.RegisterRoutes(mux)
+	mux.Handle("/api/mcp", mcp.NewHandler())
 }
 
 // Handler is the Vercel serverless entry point.

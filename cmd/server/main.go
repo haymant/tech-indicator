@@ -6,6 +6,7 @@ import (
 
 	starter "vercel-go-starter"
 	"vercel-go-starter/internal/handler"
+	"vercel-go-starter/internal/mcp"
 )
 
 func main() {
@@ -13,6 +14,9 @@ func main() {
 
 	h := handler.New(starter.StaticFiles)
 	h.RegisterRoutes(mux)
+
+	// Register MCP endpoint.
+	mux.Handle("/api/mcp", mcp.NewHandler())
 
 	port := os.Getenv("PORT")
 	if port == "" {
