@@ -59,9 +59,136 @@ curl -X POST http://localhost:3000/api/sync \
 
 | Status | Description |
 |--------|-------------|
-| `202 Accepted` | Sync started — runs in background |
+| `200 OK` | Sync completed |
 | `401 Unauthorized` | Missing or invalid bearer token |
 | `405 Method Not Allowed` | Non-POST request |
+
+### GET /api/indicators — List Available Indicators
+
+Returns the full catalog of supported technical indicators with category, description, inputs, and default parameters.
+
+```bash
+curl http://localhost:3000/api/indicators
+```
+
+**Response — 200 OK:**
+
+```json
+{
+  "indicators": [
+    {
+      "name": "rsi_14",
+      "category": "momentum",
+      "display_name": "Relative Strength Index",
+      "description": "Momentum oscillator measuring the speed and magnitude of recent price changes...",
+      "when_to_use": "Best for identifying trend reversals and overbought/oversold levels...",
+      "inputs": ["close"],
+      "outputs": 1,
+      "default_parameters": { "period": 14 }
+    }
+  ],
+  "count": 17,
+  "categories": {
+    "trend":      { "count": 7,  "description": "Identify the direction and strength of price trends" },
+    "momentum":   { "count": 5,  "description": "Measure the speed and magnitude of price movements" },
+    "volatility": { "count": 3,  "description": "Measure the rate and magnitude of price fluctuations" },
+    "volume":     { "count": 2,  "description": "Analyze trading volume to confirm price movements" }
+  }
+}
+```
+
+### POST /api/indicators/calculate — Compute & Store Indicators
+
+Computes technical indicators from synced snapshots and stores the results in the `indicators` table in MotherDuck. Requires the same bearer token as sync.
+
+```bash
+# Calculate specific indicators for specific assets
+curl -X POST http://localhost:3000/api/indicators/calculate \
+  -H "Authorization: Bearer $TECH_INDICATOR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"assets":["tsla","aapl"],"indicators":["rsi_14","sma_20","macd_12_26_9","bb_20_2"],"days":365}'
+
+# Calculate ALL indicators for ALL assets (may take a while)
+curl -X POST http://localhost:3000/api/indicators/calculate \
+  -H "Authorization: Bearer $TECH_INDICATOR_API_KEY"
+```
+
+**Request body** (optional JSON):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `assets` | `[]string` | All assets in snapshots | Ticker symbols to calculate |
+| `indicators` | `[]string` | All 17 indicators | See GET `/api/indicators` for names |
+| `days` | `int` | `365` | Lookback window of snapshots to use |
+
+**Registered indicators (17):**
+
+| Category | Indicators |
+|----------|-----------|
+| Trend | `sma_20`, `sma_50`, `ema_20`, `macd_12_26_9`, `vwma_20`, `apo_14_30`, `roc_9` |
+| Momentum | `rsi_14`, `stoch_14_3`, `williams_r_14`, `awesome_oscillator`, `ibs` |
+| Volatility | `bb_20_2`, `atr_14`, `tr` |
+| Volume | `obv`, `ad` |
+
+**Multi-output indicators** produce multiple sub-indicator values per date (e.g. `macd_12_26_9_line`, `macd_12_26_9_signal`, `macd_12_26_9_histogram`).
+
+**Tables:**
+
+| Table | Schema | Purpose |
+|-------|--------|---------|
+| `snapshots` | `(name, date, open, high, low, close, volume)` | Raw OHLCV data from Tiingo |
+| `indicators` | `(name, date, indicator, value)` PK: `(name, date, indicator)` | Computed indicator values |
+
+**Responses:**
+
+| Status | Description |
+|--------|-------------|
+| `200 OK` | Calculation completed |
+| `400 Bad Request` | Unknown indicator name |
+| `401 Unauthorized` | Missing or invalid bearer token |
+
+### GET /api/indicators/values — Fetch Stored Indicator Values
+
+Returns computed indicator values from the `indicators` table. No auth required (read-only).
+
+```bash
+# Fetch RSI for TSLA
+curl "http://localhost:3000/api/indicators/values?symbols=tsla&indicators=rsi_14"
+
+# Fetch multiple indicators for multiple symbols
+curl "http://localhost:3000/api/indicators/values?symbols=tsla,aapl&indicators=rsi_14,sma_20&date_from=2026-01-01"
+
+# Fetch ALL indicators for a symbol (omit indicators param)
+curl "http://localhost:3000/api/indicators/values?symbols=tsla"
+```
+
+**Query parameters:**
+
+| Param | Required | Description |
+|-------|----------|-------------|
+| `symbols` | ✅ | Comma-separated ticker symbols |
+| `indicators` | ❌ | Comma-separated indicator names (default: all) |
+| `date_from` | ❌ | Start date (YYYY-MM-DD) |
+| `date_to` | ❌ | End date (YYYY-MM-DD) |
+
+**Response — 200 OK:**
+
+```json
+{
+  "symbols": ["tsla"],
+  "indicators": ["rsi_14"],
+  "data": {
+    "tsla": {
+      "rsi_14": [
+        { "date": "2025-07-07", "value": 61.1 },
+        { "date": "2025-07-08", "value": 64.7 }
+      ]
+    }
+  },
+  "total": 236,
+  "timestamp": "2026-07-04T12:00:00Z"
+}
+```
 
 ## Deploying to Vercel
 

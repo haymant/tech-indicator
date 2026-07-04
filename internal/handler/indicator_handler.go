@@ -15,6 +15,7 @@ import (
 
 	"github.com/cinar/indicator/v2/asset"
 	"github.com/cinar/indicator/v2/helper"
+	"github.com/jackc/pgx/v5"
 )
 
 func (h *Handler) handleListIndicators(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +208,173 @@ func calculateForAsset(databaseURL, assetName string, indicatorKeys []string, da
 	}
 
 	return indicator.BatchUpsertIndicators(databaseURL, assetName, dates, results)
+}
+
+func (h *Handler) handleGetIndicatorValues(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, model.ErrorResponse{
+			Status: "error", Message: "Method not allowed", Timestamp: now(),
+		})
+		return
+	}
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status: "error", Message: "DATABASE_URL not set", Timestamp: now(),
+		})
+		return
+	}
+
+	q := r.URL.Query()
+	symbolsParam := q.Get("symbols")
+	if symbolsParam == "" {
+		writeJSON(w, http.StatusBadRequest, model.ErrorResponse{
+			Status: "error", Message: "Missing 'symbols' query parameter", Timestamp: now(),
+		})
+		return
+	}
+	symbols := splitComma(symbolsParam)
+
+	var indicatorsFilter []string
+	if indParam := q.Get("indicators"); indParam != "" {
+		indicatorsFilter = splitComma(indParam)
+	}
+
+	dateFrom := q.Get("date_from")
+	dateTo := q.Get("date_to")
+
+	// Build query with individual placeholders (MotherDuck PG doesn't support ANY with arrays).
+	query := `SELECT name, indicator, date::text, value FROM indicators WHERE`
+	args := []any{}
+	argIdx := 1
+
+	// Symbols IN clause
+	query += ` name IN (`
+	for i, s := range symbols {
+		if i > 0 {
+			query += ","
+		}
+		query += "$" + itoa(argIdx)
+		args = append(args, s)
+		argIdx++
+	}
+	query += `)`
+
+	// Indicators IN clause
+	if len(indicatorsFilter) > 0 {
+		query += ` AND indicator IN (`
+		for i, s := range indicatorsFilter {
+			if i > 0 {
+				query += ","
+			}
+			query += "$" + itoa(argIdx)
+			args = append(args, s)
+			argIdx++
+		}
+		query += `)`
+	}
+
+	if dateFrom != "" {
+		query += ` AND date >= $` + itoa(argIdx)
+		args = append(args, dateFrom)
+		argIdx++
+	}
+	if dateTo != "" {
+		query += ` AND date <= $` + itoa(argIdx)
+		args = append(args, dateTo)
+		argIdx++
+	}
+	query += ` ORDER BY name, indicator, date`
+
+	conn, err := pgx.Connect(context.Background(), databaseURL)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status: "error", Message: "Database connection failed", Timestamp: now(),
+		})
+		return
+	}
+	defer conn.Close(context.Background())
+
+	rows, err := conn.Query(context.Background(), query, args...)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status: "error", Message: "Query failed: " + err.Error(), Timestamp: now(),
+		})
+		return
+	}
+	defer rows.Close()
+
+	// Group results: data[symbol][indicator] = []DataPoint
+	data := make(map[string]map[string][]model.DataPoint)
+	total := 0
+	for rows.Next() {
+		var symbol, indicatorName, date string
+		var value float64
+		if err := rows.Scan(&symbol, &indicatorName, &date, &value); err != nil {
+			continue
+		}
+		// Keep only YYYY-MM-DD from timestamp
+		if len(date) > 10 {
+			date = date[:10]
+		}
+		if data[symbol] == nil {
+			data[symbol] = make(map[string][]model.DataPoint)
+		}
+		data[symbol][indicatorName] = append(data[symbol][indicatorName], model.DataPoint{
+			Date:  date,
+			Value: value,
+		})
+		total++
+	}
+
+	writeJSON(w, http.StatusOK, model.IndicatorValuesResponse{
+		Symbols:    symbols,
+		Indicators: indicatorsFilter,
+		Data:       data,
+		Total:      total,
+		Timestamp:  now(),
+	})
+}
+
+// splitComma splits a comma-separated string, trimming whitespace.
+func splitComma(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ',' {
+			part := s[start:i]
+			// trim leading spaces
+			for len(part) > 0 && part[0] == ' ' {
+				part = part[1:]
+			}
+			// trim trailing spaces
+			for len(part) > 0 && part[len(part)-1] == ' ' {
+				part = part[:len(part)-1]
+			}
+			if part != "" {
+				result = append(result, part)
+			}
+			start = i + 1
+		}
+	}
+	return result
+}
+
+// itoa converts an int to string without importing strconv.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	s := ""
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	return s
 }
 
 func allIndicatorKeys() []string {
