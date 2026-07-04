@@ -28,6 +28,41 @@ go run ./cmd/server
 
 When you make changes to your project, restart the server to see your changes.
 
+## API Endpoints
+
+### POST /api/sync — Trigger Market Data Sync
+
+Syncs asset snapshots from **Tiingo** into **MotherDuck**. Requires a valid bearer token matching the `TECH_INDICATOR_API_KEY` environment variable.
+
+```bash
+# Sync specific assets
+curl -X POST http://localhost:3000/api/sync \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TECH_INDICATOR_API_KEY" \
+  -d '{"assets":["aapl","msft","googl"],"days":90,"workers":2}'
+
+# Sync all known assets (defaults: 365 days, 1 worker)
+curl -X POST http://localhost:3000/api/sync \
+  -H "Authorization: Bearer $TECH_INDICATOR_API_KEY"
+```
+
+**Request body** (optional JSON):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `assets` | `[]string` | All known assets | Ticker symbols to sync |
+| `days` | `int` | `365` | Look-back period for new assets |
+| `workers` | `int` | `1` | Concurrent sync workers |
+| `delay` | `int` | `5` | Seconds between API requests (rate limiting) |
+
+**Responses:**
+
+| Status | Description |
+|--------|-------------|
+| `202 Accepted` | Sync started — runs in background |
+| `401 Unauthorized` | Missing or invalid bearer token |
+| `405 Method Not Allowed` | Non-POST request |
+
 ## Deploying to Vercel
 
 Deploy your project to Vercel with the following command:

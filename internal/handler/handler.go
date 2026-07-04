@@ -3,20 +3,56 @@ package handler
 import (
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"vercel-go-starter/internal/model"
+	"vercel-go-starter/internal/repository"
+
+	"github.com/cinar/indicator/v2/asset"
 )
 
+// SyncRunner abstracts the synchronous sync operation so it can be
+// replaced in tests without requiring real Tiingo or MotherDuck connections.
+type SyncRunner func(tiingoKey, motherduckURL string, req model.SyncRequest) error
+
+// DefaultSyncRunner is the production implementation that connects to real repositories.
+func DefaultSyncRunner(tiingoKey, motherduckURL string, req model.SyncRequest) error {
+
+	source := asset.NewTiingoRepository(tiingoKey)
+
+	target, err := asset.NewRepository(repository.MotherDuckRepositoryName, motherduckURL)
+	if err != nil {
+		return err
+	}
+
+	sync := asset.NewSync()
+	sync.Workers = req.Workers
+	sync.Delay = req.Delay
+	sync.Assets = req.Assets
+	sync.Logger = slog.Default()
+
+	defaultStartDate := time.Now().AddDate(0, 0, -req.Days)
+
+	return sync.Run(source, target, defaultStartDate)
+}
+
 type Handler struct {
-	assets embed.FS
+	assets   embed.FS
+	syncFunc SyncRunner
 }
 
 func New(assets embed.FS) *Handler {
-	return &Handler{assets: assets}
+	repository.RegisterMotherDuck()
+	return &Handler{
+		assets:   assets,
+		syncFunc: DefaultSyncRunner,
+	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -27,6 +63,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/favicon.ico", h.handleFavicon)
 	mux.HandleFunc("/api/data", h.handleGetData)
 	mux.HandleFunc("/api/items/", h.handleGetItem)
+	mux.HandleFunc("/api/sync", h.handleSync)
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +119,108 @@ func (h *Handler) handleGetItem(w http.ResponseWriter, r *http.Request) {
 		},
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, model.ErrorResponse{
+			Status:    "error",
+			Message:   "Method not allowed",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
+	if !requireBearerAuth(r) {
+		writeJSON(w, http.StatusUnauthorized, model.ErrorResponse{
+			Status:    "error",
+			Message:   "Unauthorized",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
+	tiingoKey := os.Getenv("TIINGO_API_KEY")
+	if tiingoKey == "" {
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status:    "error",
+			Message:   "TIINGO_API_KEY not set",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
+	motherduckURL := os.Getenv("MOTHERDUCK_URL")
+	if motherduckURL == "" {
+		writeJSON(w, http.StatusInternalServerError, model.ErrorResponse{
+			Status:    "error",
+			Message:   "MOTHERDUCK_URL not set",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
+	var req model.SyncRequest
+	if r.Body != nil {
+		data, err := io.ReadAll(r.Body)
+		if err == nil && len(data) > 0 {
+			if err := json.Unmarshal(data, &req); err != nil {
+				writeJSON(w, http.StatusBadRequest, model.ErrorResponse{
+					Status:    "error",
+					Message:   "Invalid request body",
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				})
+				return
+			}
+		}
+	}
+
+	if req.Days <= 0 {
+		req.Days = 365
+	}
+	if req.Workers <= 0 {
+		req.Workers = 1
+	}
+	if req.Delay <= 0 {
+		req.Delay = 5
+	}
+
+	go func() {
+		if err := h.syncFunc(tiingoKey, motherduckURL, req); err != nil {
+			slog.Error("Sync failed", "error", err)
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, model.SyncResponse{
+		Status:    "accepted",
+		Message:   "Sync started",
+		Assets:    req.Assets,
+		Days:      req.Days,
+		Workers:   req.Workers,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// requireBearerAuth checks that the request has an Authorization: Bearer <token>
+// header whose token matches the TECH_INDICATOR_API_KEY environment variable.
+// Empty tokens and empty expected keys are always rejected.
+func requireBearerAuth(r *http.Request) bool {
+	expected := os.Getenv("TECH_INDICATOR_API_KEY")
+	if expected == "" {
+		return false
+	}
+
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return false
+	}
+
+	token := strings.TrimPrefix(auth, "Bearer ")
+	if token == "" {
+		return false
+	}
+
+	return token == expected
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
