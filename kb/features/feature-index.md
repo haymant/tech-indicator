@@ -7,5 +7,6 @@ last_updated: 2026-07-04
 
 | Feature ID | Title | Artifact Status | Owner |
 |-----------|-------|----------------|-------|
-| F-001 | Sync Endpoint — POST /api/sync | requirements: draft, design: draft, implementation-plan: draft, testing-plan: draft, testing-report: draft | BA → Architect → Developer → QA |
-| F-002 | Indicator Calculation & Storage | requirements: draft | BA |
+| F-001 | Sync Endpoint — POST /api/sync | ✅ requirements: complete, ✅ design: complete, ✅ implementation-plan: complete, ✅ testing-plan: complete, ✅ testing-report: complete | Deployed |
+| F-002 | Indicator Calculation & Storage (17 indicators) | ✅ requirements: complete, ✅ design: complete, ✅ implementation-plan: complete, ✅ testing-plan: complete, ✅ testing-report: complete | Deployed (27/27 tests pass) |
+| F-003 | High-Performance Batch Engine (87 indicators) | ✅ requirements: complete, ✅ design: complete, ✅ implementation-plan: complete (Phases 1-3,6 done), ✅ testing-plan: complete, ✅ testing-report: complete | Developer → QA (Phases 4-5 pending) |

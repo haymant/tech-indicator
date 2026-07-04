@@ -2,8 +2,8 @@
 title: Indicator Calculation — Implementation Plan
 feature_id: F-002
 artifact: implementation-plan
-status: draft
-version: 1.0.0
+status: complete
+version: 2.0.0
 owner_agent: Architect
 parent_feature: F-002
 last_updated: 2026-07-04

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"vercel-go-starter/internal/engine"
 	"vercel-go-starter/internal/indicator"
 	"vercel-go-starter/internal/model"
 
@@ -196,18 +197,60 @@ func calculateForAsset(databaseURL, assetName string, indicatorKeys []string, da
 		return nil
 	}
 
-	// Extract dates for alignment.
 	dates := make([]time.Time, len(snapshotSlice))
 	for i, s := range snapshotSlice {
 		dates[i] = s.Date
 	}
 
-	results := indicator.ComputeIndicators(ctx, snapshotSlice, indicatorKeys)
+	// Check which indicators are already cached.
+	existing, err := engine.ExistingIndicators(ctx, databaseURL, assetName)
+	if err != nil {
+		slog.Warn("Could not check existing indicators", "asset", assetName, "error", err)
+		existing = nil
+	}
+
+	// Filter out already-cached indicators.
+	needed := indicatorKeys[:0]
+	for _, k := range indicatorKeys {
+		if existing != nil && existing[k] {
+			slog.Debug("Skipping cached indicator", "asset", assetName, "indicator", k)
+			continue
+		}
+		// Also check sub-indicator keys (e.g., "macd_12_26_9_line").
+		if existing != nil {
+			// Check if any variant exists.
+			found := false
+			for ek := range existing {
+				if len(ek) >= len(k) && ek[:len(k)] == k {
+					found = true
+					break
+				}
+			}
+			if found {
+				continue
+			}
+		}
+		needed = append(needed, k)
+	}
+
+	if len(needed) == 0 {
+		slog.Info("All indicators already cached", "asset", assetName)
+		return nil
+	}
+
+	slog.Info("Computing indicators", "asset", assetName,
+		"cached", len(indicatorKeys)-len(needed),
+		"new", len(needed))
+
+	// Use the fast slice-based engine.
+	input := engine.SnapshotsToInput(snapshotSlice)
+	results := engine.ComputeIndicators(ctx, input, needed)
 	if len(results) == 0 {
 		return nil
 	}
 
-	return indicator.BatchUpsertIndicators(databaseURL, assetName, dates, results)
+	// Batch write via chunked multi-row INSERT.
+	return engine.WriteIndicators(ctx, databaseURL, assetName, dates, results)
 }
 
 func (h *Handler) handleGetIndicatorValues(w http.ResponseWriter, r *http.Request) {
@@ -378,12 +421,7 @@ func itoa(n int) string {
 }
 
 func allIndicatorKeys() []string {
-	keys := make([]string, 0, len(indicator.Registry))
-	for k := range indicator.Registry {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return engine.AllIndicatorKeys()
 }
 
 func now() string {

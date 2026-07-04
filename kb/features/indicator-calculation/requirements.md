@@ -2,8 +2,8 @@
 title: Indicator Calculation & Storage Endpoints
 feature_id: F-002
 artifact: requirements
-status: draft
-version: 1.0.0
+status: complete
+version: 2.0.0
 owner_agent: BA
 parent_feature: null
 last_updated: 2026-07-04

@@ -23,7 +23,7 @@ type OHLCVStreams struct {
 
 // IndicatorResult is a single computed indicator time series.
 type IndicatorResult struct {
-	SubIndicator string    // "" for single-output, "line"/"signal"/"histogram" etc.
+	SubIndicator string // "" for single-output, "line"/"signal"/"histogram" etc.
 	Values       []float64
 }
 
