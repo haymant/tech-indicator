@@ -1,5 +1,4 @@
 package mcp
-package mcp
 
 import (
 	"encoding/json"
@@ -11,6 +10,19 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// parseSSEResponse extracts the JSON payload from an SSE-formatted response.
+func parseSSEResponse(raw string) string {
+	// SSE format: "event: message\ndata: {json}\n\n"
+	lines := strings.Split(raw, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "data: ") {
+			return strings.TrimPrefix(line, "data: ")
+		}
+	}
+	// Fallback: try parsing as raw JSON (for potential non-SSE responses).
+	return raw
+}
 
 // mcpPost sends an MCP JSON-RPC request and returns the response body.
 func mcpPost(t *testing.T, handler http.Handler, body string, auth string) string {
@@ -24,7 +36,7 @@ func mcpPost(t *testing.T, handler http.Handler, body string, auth string) strin
 	}
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
-	return w.Body.String()
+	return parseSSEResponse(w.Body.String())
 }
 
 // mcpOptions sends an OPTIONS preflight request.

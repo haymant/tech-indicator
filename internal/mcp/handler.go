@@ -19,8 +19,8 @@ func NewHandler() http.Handler {
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{
-			Stateless:    true,
-			JSONResponse: true,
+			Stateless:                  true,
+			DisableLocalhostProtection: true, // required on Vercel
 		},
 	)
 
