@@ -48,7 +48,7 @@ func mcpOptions(t *testing.T, handler http.Handler) *httptest.ResponseRecorder {
 	return w
 }
 
-// ─── TC-01: tools/list returns 4 tools ─────────────────────────────────────
+// ─── TC-01: tools/list returns 11 tools ─────────────────────────────────────
 
 func TestMCPServer_ToolList(t *testing.T) {
 	handler := NewHandler()
@@ -73,8 +73,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 		t.Fatalf("failed to parse tools/list response: %v\nbody: %s", err, listResp)
 	}
 
-	if len(result.Result.Tools) != 4 {
-		t.Errorf("expected 4 tools, got %d", len(result.Result.Tools))
+	if len(result.Result.Tools) != 11 {
+		t.Errorf("expected 11 tools, got %d", len(result.Result.Tools))
 	}
 
 	names := make(map[string]bool)
@@ -82,7 +82,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 		names[tool.Name] = true
 	}
 
-	expected := []string{"sync_asset_data", "list_indicators", "calculate_indicators", "query_indicator_values"}
+	expected := []string{"sync_asset_data", "list_indicators", "calculate_indicators", "query_indicator_values",
+		"list_strategy_types", "list_strategies", "create_strategy", "generate_signals", "run_backtest", "query_signals", "query_backtest_results"}
 	for _, name := range expected {
 		if !names[name] {
 			t.Errorf("missing tool: %s", name)

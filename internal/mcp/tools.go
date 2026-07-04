@@ -26,12 +26,14 @@ type SyncAssetInput struct {
 	Assets  []string `json:"assets"  jsonschema:"required,ticker symbols to sync, e.g. AAPL,MSFT"`
 	Days    int      `json:"days"    jsonschema:"number of lookback days, default 365"`
 	Workers int      `json:"workers" jsonschema:"concurrent workers, default 1"`
+	Force   bool     `json:"force"   jsonschema:"force full re-sync by deleting existing data, default false"`
 }
 
 type CalculateIndicatorsInput struct {
 	Assets     []string `json:"assets"     jsonschema:"ticker symbols to calculate for, e.g. AAPL,MSFT; defaults to all assets"`
 	Indicators []string `json:"indicators" jsonschema:"specific indicator keys, e.g. rsi_14,sma_20; defaults to all 89"`
 	Days       int      `json:"days"       jsonschema:"lookback days of snapshots to use, defaults to all available"`
+	Force      bool     `json:"force"      jsonschema:"force recalculation by deleting existing values, default false"`
 }
 
 type QueryIndicatorValuesInput struct {
@@ -67,6 +69,50 @@ func registerTools(server *mcp.Server) {
 		Name:        "query_indicator_values",
 		Description: "Fetch computed indicator values for given symbols and indicators. Returns time-series data points with dates.",
 	}, handleQueryIndicatorValues)
+
+	// ─── F-005: Strategy Management, Signals, Backtesting ──────────────
+
+	// list_strategy_types
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_strategy_types",
+		Description: "List all available trading strategy types from the library catalog with descriptions and default parameters.",
+	}, handleListStrategyTypes)
+
+	// list_strategies
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_strategies",
+		Description: "List user-defined strategies with optional filters by type, underlying, or name.",
+	}, handleListStrategies)
+
+	// create_strategy
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_strategy",
+		Description: "Create a new trading strategy configuration and save it to the database.",
+	}, handleCreateStrategy)
+
+	// generate_signals
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "generate_signals",
+		Description: "Generate buy/sell/hold signals for a saved strategy using market data. Cached by default; use force=true to regenerate.",
+	}, handleGenerateSignals)
+
+	// run_backtest
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "run_backtest",
+		Description: "Run historical backtesting for a saved strategy and compute performance/risk metrics. Cached by default; use force=true to rerun.",
+	}, handleRunBacktest)
+
+	// query_signals
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "query_signals",
+		Description: "Query generated signals with filters by strategy, underlying, date range, or action.",
+	}, handleQuerySignals)
+
+	// query_backtest_results
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "query_backtest_results",
+		Description: "Query backtest performance/risk evaluations with filters by strategy, underlying, date range, or minimum return.",
+	}, handleQueryBacktestResults)
 }
 
 // ─── Tool Handlers ──────────────────────────────────────────────────────────
@@ -97,6 +143,7 @@ func handleSyncAssetData(ctx context.Context, req *mcp.CallToolRequest, input Sy
 		Assets:  input.Assets,
 		Days:    input.Days,
 		Workers: input.Workers,
+		Force:   input.Force,
 	}
 
 	repository.RegisterMotherDuck()
@@ -222,7 +269,7 @@ func handleCalculateIndicators(ctx context.Context, req *mcp.CallToolRequest, in
 	var errors []string
 
 	for _, assetName := range input.Assets {
-		if err := calculateForAsset(ctx, databaseURL, assetName, input.Indicators, input.Days); err != nil {
+		if err := calculateForAsset(ctx, databaseURL, assetName, input.Indicators, input.Days, input.Force); err != nil {
 			slog.Error("Calculation failed for asset", "asset", assetName, "error", err)
 			errors = append(errors, assetName+": "+err.Error())
 			continue
@@ -420,7 +467,7 @@ func splitComma(s string) []string {
 }
 
 // calculateForAsset reuses the logic from the handler package but accesses DB directly.
-func calculateForAsset(ctx context.Context, databaseURL, assetName string, indicatorKeys []string, days int) error {
+func calculateForAsset(ctx context.Context, databaseURL, assetName string, indicatorKeys []string, days int, force bool) error {
 	repo, err := asset.NewRepository("motherduck", databaseURL)
 	if err != nil {
 		return err
@@ -441,6 +488,16 @@ func calculateForAsset(ctx context.Context, databaseURL, assetName string, indic
 	dates := make([]time.Time, len(snapshotSlice))
 	for i, s := range snapshotSlice {
 		dates[i] = s.Date
+	}
+
+	// When force is true, delete existing indicators for this asset first.
+	if force {
+		conn, err := pgx.Connect(ctx, databaseURL)
+		if err == nil {
+			conn.Exec(ctx, `DELETE FROM indicators WHERE name = $1`, assetName)
+			conn.Close(ctx)
+			slog.Info("Deleted existing indicators for force recalculation", "asset", assetName)
+		}
 	}
 
 	// Check existing indicators for caching.

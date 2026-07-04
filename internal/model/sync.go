@@ -6,6 +6,7 @@ type SyncRequest struct {
 	Days    int      `json:"days,omitempty"`
 	Workers int      `json:"workers,omitempty"`
 	Delay   int      `json:"delay,omitempty"`
+	Force   bool     `json:"force,omitempty"`
 }
 
 // SyncResponse is returned on 202 Accepted after starting a sync.
@@ -32,6 +33,7 @@ type IndicatorCalculateRequest struct {
 	Assets     []string `json:"assets,omitempty"`
 	Indicators []string `json:"indicators,omitempty"`
 	Days       int      `json:"days,omitempty"`
+	Force      bool     `json:"force,omitempty"`
 }
 
 // IndicatorCalculateResponse is returned after calculation completes.

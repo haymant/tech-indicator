@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -15,6 +17,7 @@ import (
 	"vercel-go-starter/internal/repository"
 
 	"github.com/cinar/indicator/v2/asset"
+	"github.com/jackc/pgx/v5"
 )
 
 // SyncRunner abstracts the synchronous sync operation so it can be
@@ -23,6 +26,13 @@ type SyncRunner func(tiingoKey, databaseURL string, req model.SyncRequest) error
 
 // DefaultSyncRunner is the production implementation that connects to real repositories.
 func DefaultSyncRunner(tiingoKey, databaseURL string, req model.SyncRequest) error {
+
+	// When force is true, delete existing snapshots for each asset before re-syncing.
+	if req.Force {
+		if err := deleteAssetSnapshots(databaseURL, req.Assets); err != nil {
+			return err
+		}
+	}
 
 	source := asset.NewTiingoRepository(tiingoKey)
 
@@ -40,6 +50,27 @@ func DefaultSyncRunner(tiingoKey, databaseURL string, req model.SyncRequest) err
 	defaultStartDate := time.Now().AddDate(0, 0, -req.Days)
 
 	return sync.Run(source, target, defaultStartDate)
+}
+
+// deleteAssetSnapshots removes all snapshot rows for the given assets from MotherDuck.
+func deleteAssetSnapshots(databaseURL string, assets []string) error {
+	if len(assets) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("delete connect: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	for _, a := range assets {
+		if _, err := conn.Exec(ctx, `DELETE FROM snapshots WHERE name = $1`, a); err != nil {
+			return fmt.Errorf("delete %s: %w", a, err)
+		}
+		slog.Info("Deleted existing snapshots", "asset", a)
+	}
+	return nil
 }
 
 type Handler struct {
@@ -67,6 +98,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/indicators", h.handleListIndicators)
 	mux.HandleFunc("/api/indicators/calculate", h.handleCalculateIndicators)
 	mux.HandleFunc("/api/indicators/values", h.handleGetIndicatorValues)
+
+	// F-005: Strategy management, signals, backtesting.
+	mux.HandleFunc("/api/strategies/types", h.handleListStrategyTypes)
+	mux.HandleFunc("/api/strategies", h.handleStrategies)
+	mux.HandleFunc("/api/strategies/", h.handleStrategyByID)
+	mux.HandleFunc("/api/signals", h.handleQuerySignals)
+	mux.HandleFunc("/api/backtest-results", h.handleQueryBacktestResults)
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +143,20 @@ func (h *Handler) handleGetData(w http.ResponseWriter, r *http.Request) {
 		Total:     len(items),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// handleStrategies dispatches between GET and POST for /api/strategies.
+func (h *Handler) handleStrategies(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.handleListStrategies(w, r)
+	case http.MethodPost:
+		h.handleCreateStrategy(w, r)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, model.ErrorResponse{
+			Status: "error", Message: "Method not allowed", Timestamp: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
 }
 
 func (h *Handler) handleGetItem(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +285,15 @@ func requireBearerAuth(r *http.Request) bool {
 	}
 
 	return token == expected
+}
+
+// helperChanToSlice converts a channel of asset.Snapshots to a slice.
+func helperChanToSlice(c <-chan *asset.Snapshot) []*asset.Snapshot {
+	var result []*asset.Snapshot
+	for v := range c {
+		result = append(result, v)
+	}
+	return result
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -166,7 +167,7 @@ func (h *Handler) handleCalculateIndicators(w http.ResponseWriter, r *http.Reque
 	processedAssets := 0
 
 	for _, assetName := range req.Assets {
-		if err := calculateForAsset(databaseURL, assetName, req.Indicators, req.Days); err != nil {
+		if err := calculateForAsset(databaseURL, assetName, req.Indicators, req.Days, req.Force); err != nil {
 			slog.Error("Calculation failed for asset", "asset", assetName, "error", err)
 			continue
 		}
@@ -183,7 +184,7 @@ func (h *Handler) handleCalculateIndicators(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func calculateForAsset(databaseURL, assetName string, indicatorKeys []string, days int) error {
+func calculateForAsset(databaseURL, assetName string, indicatorKeys []string, days int, force bool) error {
 	ctx := context.Background()
 
 	repo, err := asset.NewRepository("motherduck", databaseURL)
@@ -206,6 +207,13 @@ func calculateForAsset(databaseURL, assetName string, indicatorKeys []string, da
 	dates := make([]time.Time, len(snapshotSlice))
 	for i, s := range snapshotSlice {
 		dates[i] = s.Date
+	}
+
+	// When force is true, delete existing indicators for this asset first.
+	if force {
+		if err := deleteAssetIndicators(ctx, databaseURL, assetName); err != nil {
+			return err
+		}
 	}
 
 	// Check which indicators are already cached.
@@ -428,6 +436,19 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return s
+}
+
+func deleteAssetIndicators(ctx context.Context, databaseURL, assetName string) error {
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("delete indicators connect: %w", err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, `DELETE FROM indicators WHERE name = $1`, assetName); err != nil {
+		return fmt.Errorf("delete indicators %s: %w", assetName, err)
+	}
+	slog.Info("Deleted existing indicators for force recalculation", "asset", assetName)
+	return nil
 }
 
 func allIndicatorKeys() []string {
